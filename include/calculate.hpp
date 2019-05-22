@@ -10,6 +10,7 @@
 #define __CALCULATE_HPP__
 
 #include "calculate/parser.hpp"
+#include <nlohmann/json.hpp>
 #include <map>
 
 namespace calculate {
@@ -31,6 +32,8 @@ struct Precedence {
 
 }
 
+
+using nlohmann::json;
 
 template <> BaseParser<double>::BaseParser(const Lexer& lexer) :
 	_lexer{ lexer.clone() },
@@ -229,9 +232,21 @@ template <> BaseParser<int>::BaseParser(const Lexer& lexer) :
 		});
 }
 
+template <typename Type>
+struct Result {
+	std::string variable;
+	Type value;
+	template <typename Type2>
+	static Result<Type> from(const Result<Type2> &r2) {
+		Result<Type> r1;
+		r1.variable = r2.variable;
+		r1.value = (Type)r2.value;
+		return 1;
+	}
+};
 
 template <typename Type>
-class Expression {
+class GenericExpression {
 	using Parser = BaseParser<Type>;
 	using MathExp = typename Parser::Expression;
 	Parser parser;
@@ -239,11 +254,7 @@ class Expression {
 	std::string assign_var;
 	char assign_type;
 public:
-	struct Result {
-		std::string variable;
-		Type value;
-	};
-	Expression(std::string expr) :parser(make_lexer<Type>()),assign_var(""),assign_type(0) {
+	GenericExpression(std::string expr) :parser(make_lexer<Type>()),assign_var(""),assign_type(0) {
 		size_t len = expr.length();
 		if (len == 0) return;
 		size_t idx = expr.find("=");
@@ -287,8 +298,11 @@ public:
 	std::vector<std::string> variables() {
 		return expression->variables();
 	}
-	Result eval(std::map<std::string,Type> args) {
-		Result r;
+	std::string assign_variable() {
+		return assign_var;
+	}
+	Result<Type> eval(std::map<std::string,Type> args) {
+		Result<Type> r;
 		auto vars = variables();
 		auto var_vals = std::vector<Type>(vars.size());
 		int i = 0;
@@ -326,6 +340,75 @@ public:
 private:
 	double mod(double a, double b) { return std::fmod(a, b); }
 	int mod(int a, int b) { return a % b; }
+};
+
+class Expression {
+private:
+	std::unique_ptr<GenericExpression<double>> double_expression;
+	std::unique_ptr<GenericExpression<int>> int_expression;
+public:
+	enum Type {
+		DOUBLE,
+		INTEGER
+	} type;
+	Expression(std::string expression_str, json context) {
+		double_expression = std::make_unique<GenericExpression<double>>(expression_str);
+		bool needs_integer_parser = true;
+		for (const std::string &var_str : double_expression->variables()) {
+			needs_integer_parser = needs_integer_parser &&
+				context[var_str].is_number_integer();
+		}
+		if (needs_integer_parser) {
+			double_expression.reset();
+			int_expression = std::make_unique<GenericExpression<int>>(expression_str);
+			type = INTEGER;
+		}
+		else {
+			type = DOUBLE;
+		}
+	}
+	Type get_type() { return type; }
+	std::string get_assign_variable() {
+		if (type == DOUBLE)
+			return double_expression->assign_variable();
+		else if(type == INTEGER)
+			return int_expression->assign_variable();
+		throw std::runtime_error("Unsupported expression type");
+	}
+	std::vector<std::string> get_variables() {
+		if (type == DOUBLE)
+			return double_expression->variables();
+		else if (type == INTEGER)
+			return int_expression->variables();
+		throw std::runtime_error("Unsupported expression type");
+	}
+	template <typename T>
+	Result<T> eval(json context) {
+		throw std::runtime_error("Unsupported eval type for expression");
+	}
+	template <>
+	Result<int> eval(json context) {
+		if (type == INTEGER)
+			return int_expression->eval(context);
+		throw std::runtime_error("Cannot eval: expression type is not integer.");
+	}
+	template <>
+	Result<double> eval(json context) {
+		if (type == DOUBLE)
+			return double_expression->eval(context);
+		throw std::runtime_error("Cannot eval: expression type is not integer.");
+	}
+	// these eval versions will cast if type is different
+	Result<double> eval_to_double(json context) {
+		if (type == DOUBLE) return double_expression->eval(context);
+		else if (type == INTEGER) return Result<double>::from(int_expression->eval(context));
+		throw std::runtime_error("Unknown expression type");
+	}
+	Result<int> eval_to_int(json context) {
+		if (type == DOUBLE) return Result<int>::from(double_expression->eval(context));
+		else if (type == INTEGER) return int_expression->eval(context);
+		throw std::runtime_error("Unknown expression type");
+	}
 };
 
 }
