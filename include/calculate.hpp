@@ -9,8 +9,9 @@
 #ifndef __CALCULATE_HPP__
 #define __CALCULATE_HPP__
 
-#include "calculate/parser.hpp"
+#undef strtoll
 #include <nlohmann/json.hpp>
+#include "calculate/parser.hpp"
 #include <map>
 
 namespace calculate {
@@ -241,7 +242,7 @@ struct Result {
 		Result<Type> r1;
 		r1.variable = r2.variable;
 		r1.value = (Type)r2.value;
-		return 1;
+		return r1;
 	}
 };
 
@@ -254,6 +255,11 @@ class GenericExpression {
 	std::string assign_var;
 	char assign_type;
 public:
+	GenericExpression(const GenericExpression& ge):parser(ge.parser) {
+		expression = ge.expression;
+		assign_var = ge.assign_var;
+		assign_type = ge.assign_type;
+	}
 	GenericExpression(std::string expr) :parser(make_lexer<Type>()),assign_var(""),assign_type(0) {
 		size_t len = expr.length();
 		if (len == 0) return;
@@ -351,12 +357,37 @@ public:
 		DOUBLE,
 		INTEGER
 	} type;
+	Expression(Expression &&exp) noexcept {
+		if (exp.type == INTEGER)
+		{
+			type = INTEGER;
+			int_expression = std::move(exp.int_expression);
+		}
+		else
+		{
+			type = DOUBLE;
+			double_expression = std::move(exp.double_expression);
+		}
+	}
+	Expression(const Expression &exp) {
+		if (exp.type == INTEGER)
+		{
+			type = INTEGER;
+			int_expression = std::make_unique<GenericExpression<int>>(*exp.int_expression);
+		}
+		else
+		{
+			type = DOUBLE;
+			double_expression = std::make_unique<GenericExpression<double>>(*exp.double_expression);
+		}
+	}
 	Expression(std::string expression_str, json context) {
 		double_expression = std::make_unique<GenericExpression<double>>(expression_str);
 		bool needs_integer_parser = true;
 		for (const std::string &var_str : double_expression->variables()) {
-			needs_integer_parser = needs_integer_parser &&
-				context[var_str].is_number_integer();
+			// default any variable outside event-system state to double type, for now
+			needs_integer_parser = needs_integer_parser && (context.find(var_str) != context.end() &&
+				context[var_str].is_number_integer());
 		}
 		if (needs_integer_parser) {
 			double_expression.reset();

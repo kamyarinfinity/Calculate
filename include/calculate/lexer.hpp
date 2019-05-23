@@ -70,7 +70,7 @@ constexpr const char split[] = R"(^(?:(?:(.*[^ij])([+\-].+)[ij])|(.*[^ij])|(.+)[
 
 
 template<typename Type>
-Type read(std::istringstream& istream, const std::string& token) {
+inline Type read(std::istringstream& istream, const std::string& token) {
     if (token == "NaN" || token == "+NaN" || token == "-NaN")
         return std::numeric_limits<Type>::quiet_NaN();
     if (token == "Inf" || token == "+Inf")
@@ -86,7 +86,7 @@ Type read(std::istringstream& istream, const std::string& token) {
 }
 
 template<typename Type>
-std::string write(std::ostringstream& ostream, const Type& value) {
+inline std::string write(std::ostringstream& ostream, const Type& value) {
     if (std::isnan(value))
         return "NaN";
     if (std::isinf(value))
@@ -96,6 +96,14 @@ std::string write(std::ostringstream& ostream, const Type& value) {
     ostream.str("");
     ostream << value;
     return ostream.str();
+}
+
+template<>
+inline std::string write(std::ostringstream& ostream, const int& value) {
+	ostream.clear();
+	ostream.str("");
+	ostream << value;
+	return ostream.str();
 }
 
 }
